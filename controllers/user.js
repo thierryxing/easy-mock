@@ -5,7 +5,7 @@ const config = require('config')
 const jwt = require('jsonwebtoken')
 
 const util = require('../util')
-const ldapUtil = require('../util/ldap')
+const LDAPUtil = require('../util/ldap')
 const mockUtil = require('../util/mock')
 const ft = require('../models/fields_table')
 const { UserProxy, ProjectProxy, MockProxy } = require('../proxy')
@@ -72,6 +72,7 @@ module.exports = class UserController {
 
   static async login (ctx) {
     let verifyPassword
+    let ldapUtil = new LDAPUtil()
     const name = ctx.checkBody('name').notEmpty().value
     const password = ctx.checkBody('password').notEmpty().value
 
@@ -81,10 +82,10 @@ module.exports = class UserController {
     }
 
     let user = await UserProxy.getByName(name)
-
     /* istanbul ignore if */
     if (ldapUtil.enable) {
       try {
+        await ldapUtil.initClient()
         verifyPassword = await ldapUtil.authenticate(name, password)
       } catch (error) {
         ctx.body = ctx.util.refail(error.message)
