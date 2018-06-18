@@ -5,47 +5,51 @@ const config = require('config')
 
 const ldapConf = config.get('ldap')
 
-function createClient (opts) {
-  return new Promise((resolve, reject) => {
-    if (!ldapConf.server) return
-
-    const dn = opts.credentials.dn
-    const passwd = opts.credentials.passwd
-    const client = ldap.createClient(opts)
-
-    function onConnect () {
-      client.removeListener('error', onError)
-      client.bind(dn, passwd, err => {
-        /* istanbul ignore if */
-        if (err) reject(new Error(err))
-        else resolve(client)
+module.exports = class LDAPUtil {
+  async initClient () {
+    return new Promise((resolve, reject) =>
+      this.createClient({
+        url: ldapConf.server,
+        credentials: {
+          dn: ldapConf.bindDN,
+          passwd: ldapConf.password
+        }
+      }).then(client => {
+        this._adminClient = client
+        resolve()
+      }, err => {
+        reject(new Error(err))
       })
-    }
+    )
+  }
+  createClient (opts) {
+    return new Promise((resolve, reject) => {
+      if (!ldapConf.server) return
 
-    /* istanbul ignore next */
-    function onError (err) {
-      client.removeListener('connect', onConnect)
-      reject(new Error(err))
-    }
+      const dn = opts.credentials.dn
+      const passwd = opts.credentials.passwd
+      const client = ldap.createClient(opts)
 
-    client.once('connect', onConnect)
-    client.once('error', onError)
-    client.once('connectTimeout', /* istanbul ignore next */ () => {
-      onError(new Error('connect timeout'))
-    })
-  })
-}
-
-class LDAPUtil {
-  constructor () {
-    createClient({
-      url: ldapConf.server,
-      credentials: {
-        dn: ldapConf.bindDN,
-        passwd: ldapConf.password
+      function onConnect () {
+        client.removeListener('error', onError)
+        client.bind(dn, passwd, err => {
+          /* istanbul ignore if */
+          if (err) reject(new Error(err))
+          else resolve(client)
+        })
       }
-    }).then(client => {
-      this._adminClient = client
+
+      /* istanbul ignore next */
+      function onError (err) {
+        client.removeListener('connect', onConnect)
+        reject(new Error(err))
+      }
+
+      client.once('connect', onConnect)
+      client.once('error', onError)
+      client.once('connectTimeout', /* istanbul ignore next */ () => {
+        onError(new Error('connect timeout'))
+      })
     })
   }
   get enable () {
@@ -76,17 +80,8 @@ class LDAPUtil {
 
         search.on('end', result => {
           if (items.length === 1) {
-            createClient({
-              url: ldapConf.server,
-              credentials: {
-                dn: items[0].dn,
-                passwd: password
-              }
-            }).then(client => {
-              client.unbind(() => resolve(true))
-            }).catch(() => {
-              reject(new Error('用户名或密码错误'))
-            })
+            this._adminClient.unbind()
+            resolve(true)
           } else {
             reject(new Error('用户名或密码错误'))
           }
@@ -95,5 +90,3 @@ class LDAPUtil {
     })
   }
 }
-
-module.exports = new LDAPUtil()
